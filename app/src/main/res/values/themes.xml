@@ -1,0 +1,8 @@
+<resources>
+    <color name="trix_bg">#0F1222</color>
+    <style name="Theme.Trix" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/trix_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

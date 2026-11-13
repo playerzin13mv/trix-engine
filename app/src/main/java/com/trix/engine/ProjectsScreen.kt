@@ -1,8 +1,11 @@
 package com.trix.engine
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -22,26 +25,30 @@ import java.util.Locale
 
 @Composable
 fun PermissionScreen(onRequest: () -> Unit) {
-    Column(
-        Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+    Row(
+        Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(28.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        TrixLogo(110.dp)
-        Spacer(Modifier.height(16.dp))
-        Text("Trix Engine", fontSize = 30.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(20.dp))
-        Text(
-            "Para guardar seus jogos, a Trix Engine precisa de acesso ao armazenamento. " +
-                    "Ela vai criar a pasta TrixEngine/Projects no seu celular, onde ficam todos os projetos " +
-                    "(assim você também edita os arquivos pelo Termux).",
-            textAlign = TextAlign.Center, color = Color(0xFFCBD5E1)
-        )
-        Spacer(Modifier.height(24.dp))
-        Button(onClick = onRequest) { Text("Permitir acesso ao armazenamento") }
+        TrixLogo(130.dp)
+        Spacer(Modifier.width(28.dp))
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            Text("Trix Engine", fontSize = 30.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Para guardar seus jogos, a Trix Engine precisa de acesso ao armazenamento. " +
+                        "Ela vai criar a pasta TrixEngine/Projects no seu celular, onde ficam todos os projetos " +
+                        "(assim você também edita os arquivos pelo Termux).",
+                color = Color(0xFFCBD5E1)
+            )
+            Spacer(Modifier.height(18.dp))
+            Button(onClick = onRequest) { Text("Permitir acesso ao armazenamento") }
+        }
     }
 }
 
+private val TEMPLATES = listOf("Vazio", "Coletar moedas", "Pulo com gravidade")
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ProjectsScreen(onOpen: (File) -> Unit) {
     var projects by remember { mutableStateOf(Projects.list()) }
@@ -49,14 +56,14 @@ fun ProjectsScreen(onOpen: (File) -> Unit) {
     var toDelete by remember { mutableStateOf<File?>(null) }
     val fmt = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()) }
 
-    Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+    Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         Column(Modifier.fillMaxSize()) {
-            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                TrixLogo(48.dp)
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                TrixLogo(44.dp)
                 Spacer(Modifier.width(12.dp))
                 Column {
-                    Text("Trix Engine", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    Text("Seus projetos • v0.1", fontSize = 12.sp, color = Color(0xFF94A3B8))
+                    Text("Trix Engine", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Text("Seus projetos • v0.2", fontSize = 12.sp, color = Color(0xFF94A3B8))
                 }
             }
             if (projects.isEmpty()) {
@@ -67,24 +74,29 @@ fun ProjectsScreen(onOpen: (File) -> Unit) {
                     )
                 }
             } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(300.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 90.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(projects, key = { it.path }) { dir ->
+                        val s = remember(dir.path, dir.lastModified()) { Projects.loadSettings(dir) }
                         Card(
                             onClick = { onOpen(dir) },
                             colors = CardDefaults.cardColors(containerColor = Surf),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(dir.name, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(dir.name, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                                     Text(
-                                        "Editado em " + fmt.format(Date(dir.lastModified())),
-                                        fontSize = 12.sp, color = Color(0xFF94A3B8)
+                                        (if (s.landscape) "Horizontal" else "Vertical") + " • ${s.worldW}×${s.worldH}",
+                                        fontSize = 12.sp, color = Cyan
                                     )
+                                    Text("Editado em " + fmt.format(Date(dir.lastModified())), fontSize = 11.sp, color = Color(0xFF94A3B8))
                                 }
+                                TextButton(onClick = { Projects.duplicate(dir); projects = Projects.list() }) { Text("Duplicar") }
                                 IconButton(onClick = { toDelete = dir }) {
                                     Icon(Icons.Default.Delete, contentDescription = "Apagar", tint = Color(0xFFF43F5E))
                                 }
@@ -99,35 +111,36 @@ fun ProjectsScreen(onOpen: (File) -> Unit) {
             icon = { Icon(Icons.Default.Add, null) },
             text = { Text("Novo projeto") },
             containerColor = Cyan, contentColor = Color.Black,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp)
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
         )
     }
 
     if (showNew) {
         var name by remember { mutableStateOf("") }
-        var sample by remember { mutableStateOf(true) }
+        var template by remember { mutableIntStateOf(1) }
         var error by remember { mutableStateOf<String?>(null) }
         AlertDialog(
             onDismissRequest = { showNew = false },
             title = { Text("Novo projeto") },
             text = {
-                Column {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
                     OutlinedTextField(
                         value = name, onValueChange = { name = it; error = null },
                         label = { Text("Nome") }, singleLine = true, isError = error != null,
                         supportingText = { error?.let { Text(it) } }
                     )
                     Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Switch(checked = sample, onCheckedChange = { sample = it })
-                        Spacer(Modifier.width(10.dp))
-                        Text("Incluir jogo de exemplo")
+                    Text("Modelo", fontSize = 12.sp, color = Color(0xFF94A3B8))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        TEMPLATES.forEachIndexed { i, t ->
+                            FilterChip(selected = template == i, onClick = { template = i }, label = { Text(t) })
+                        }
                     }
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val dir = Projects.create(name, sample)
+                    val dir = Projects.create(name, template)
                     if (dir == null) error = "Nome inválido ou já existe"
                     else { projects = Projects.list(); showNew = false; onOpen(dir) }
                 }) { Text("Criar") }

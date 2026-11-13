@@ -1,4 +1,4 @@
-# Trix Engine 🎮
+# Trix Engine 🎮 (v0.2)
 
 Engine de jogos 2D **nativa para Android** (Kotlin + Jetpack Compose, sem navegador/WebView),
 com linguagem própria: **TrixScript** (`.trix`).
@@ -8,6 +8,11 @@ com linguagem própria: **TrixScript** (`.trix`).
 - Editor visual: arrastar objetos, grade, hierarquia, inspetor (posição, tamanho, velocidade, cor, texto)
 - Editor de código com destaque de sintaxe, barra de atalhos e verificação de erros em tempo real
 - Botão **Testar** roda o jogo dentro do app (60 fps), com toque, som (beep) e vibração
+- **Modo horizontal** (app inteiro) + orientação do jogo configurável (horizontal/vertical)
+- **Aba Projeto**: resolução, cor de fundo, gravidade, grade, FPS, autor/versão
+- Desfazer/refazer, ordem de camadas, rotação, transparência, sprites com imagem
+- API do jogo: `spawn`, `destroy`, `find`, `clicked`, `after`, `every`, `save/load`, `restart`, `tone`
+- Modelos de projeto: Vazio, Coletar moedas, Pulo com gravidade
 - Autosave
 
 ## Compilar (pelo Termux + GitHub)

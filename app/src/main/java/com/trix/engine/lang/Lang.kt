@@ -62,7 +62,7 @@ fun lex(src: String): List<Token> {
             else -> {
                 val two = if (i + 1 < src.length) src.substring(i, i + 2) else ""
                 if (two in TWO_OPS) { out.add(Token(T.OP, two, line)); i += 2 }
-                else if (c in "+-*/%<>=(),.") { out.add(Token(T.OP, c.toString(), line)); i++ }
+                else if (c in "+-*/%<>=(),.[]") { out.add(Token(T.OP, c.toString(), line)); i++ }
                 else throw TrixError("caractere inválido '$c'", line)
             }
         }
@@ -80,6 +80,8 @@ class Member(val o: Expr, val n: String, val line: Int) : Expr()
 class Call(val f: Expr, val args: List<Expr>, val line: Int) : Expr()
 class Bin(val op: String, val l: Expr, val r: Expr, val line: Int) : Expr()
 class Un(val op: String, val e: Expr, val line: Int) : Expr()
+class ListLit(val items: List<Expr>) : Expr()
+class Index(val o: Expr, val i: Expr, val line: Int) : Expr()
 
 sealed class Stmt
 class VarS(val n: String, val e: Expr) : Stmt()
@@ -87,7 +89,7 @@ class AssignS(val target: Expr, val op: String, val e: Expr, val line: Int) : St
 class ExprS(val e: Expr) : Stmt()
 class IfS(val branches: List<Pair<Expr, List<Stmt>>>, val els: List<Stmt>?) : Stmt()
 class WhileS(val c: Expr, val body: List<Stmt>) : Stmt()
-class ForS(val v: String, val a: Expr, val b: Expr, val body: List<Stmt>, val line: Int) : Stmt()
+class ForS(val v: String, val a: Expr, val b: Expr?, val body: List<Stmt>, val line: Int) : Stmt()
 class FuncS(val name: String, val params: List<String>, val body: List<Stmt>) : Stmt()
 class RetS(val e: Expr?) : Stmt()
 object BreakS : Stmt()
@@ -165,7 +167,9 @@ class Parser(private val t: List<Token>) {
                     val v = ident()
                     if (!isKw("in")) throw TrixError("esperava 'in'", peek().line)
                     p++
-                    val a = expr(); expectOp(".."); val b2 = expr()
+                    val a = expr()
+                    var b2: Expr? = null
+                    if (isOp("..")) { p++; b2 = expr() }
                     val body = block(setOf("end")); expectEnd()
                     return ForS(v, a, b2, body, k.line)
                 }
@@ -177,7 +181,7 @@ class Parser(private val t: List<Token>) {
         val a = peek()
         if (a.t == T.OP && a.s in setOf("=", "+=", "-=", "*=", "/=")) {
             p++
-            if (e !is Id && e !is Member) throw TrixError("não dá para atribuir aqui", a.line)
+            if (e !is Id && e !is Member && e !is Index) throw TrixError("não dá para atribuir aqui", a.line)
             return AssignS(e, a.s, expr(), a.line)
         }
         return ExprS(e)
@@ -208,6 +212,11 @@ class Parser(private val t: List<Token>) {
                 val n = next()
                 if (n.t != T.ID) throw TrixError("esperava um nome depois do '.'", n.line)
                 e = Member(e, n.s, n.line)
+            } else if (isOp("[")) {
+                val o = next()
+                val i = expr()
+                expectOp("]")
+                e = Index(e, i, o.line)
             } else if (isOp("(")) {
                 val o = next()
                 val args = ArrayList<Expr>()
@@ -228,6 +237,12 @@ class Parser(private val t: List<Token>) {
             k.t == T.KW && k.s == "false" -> Lit(false)
             k.t == T.KW && k.s == "null" -> Lit(null)
             k.t == T.OP && k.s == "(" -> { val e = expr(); expectOp(")"); e }
+            k.t == T.OP && k.s == "[" -> {
+                val items = ArrayList<Expr>()
+                if (!isOp("]")) { do { items.add(expr()) } while (matchOp(",")) }
+                expectOp("]")
+                ListLit(items)
+            }
             else -> throw TrixError("'${if (k.t == T.NL) "fim de linha" else k.s}' inesperado aqui", k.line)
         }
     }
@@ -249,12 +264,13 @@ class Env(val parent: Env?) {
 fun fmt(v: Any?): String = when (v) {
     null -> "null"
     is Double -> if (v == Math.floor(v) && Math.abs(v) < 1e15) v.toLong().toString() else v.toString()
+    is List<*> -> v.joinToString(", ", "[", "]") { fmt(it) }
     else -> v.toString()
 }
 
 fun typeName(v: Any?): String = when (v) {
     null -> "nulo"; is Double -> "número"; is String -> "texto"; is Boolean -> "booleano"
-    is Props -> "objeto"; else -> "valor"
+    is Props -> "objeto"; is List<*> -> "lista"; else -> "valor"
 }
 
 class Interpreter(private val log: (String) -> Unit) {
@@ -301,6 +317,43 @@ class Interpreter(private val log: (String) -> Unit) {
             Math.hypot(g(p, "x") - g(q, "x"), g(p, "y") - g(q, "y"))
         }
         b["destroy"] = { x -> (x.getOrNull(0) as? Props)?.set("visible", false); null }
+        b["dist_xy"] = { x -> Math.hypot(a(x, 0) - a(x, 2), a(x, 1) - a(x, 3)) }
+        b["sign"] = { x -> Math.signum(a(x, 0)) }
+        b["rad"] = { x -> Math.toRadians(a(x, 0)) }
+        b["deg"] = { x -> Math.toDegrees(a(x, 0)) }
+        b["tan"] = { x -> Math.tan(a(x, 0)) }
+        b["asin"] = { x -> Math.asin(a(x, 0)) }
+        b["acos"] = { x -> Math.acos(a(x, 0)) }
+        b["approach"] = { x ->
+            val v = a(x, 0); val t = a(x, 1); val s = Math.abs(a(x, 2))
+            if (v < t) Math.min(v + s, t) else Math.max(v - s, t)
+        }
+        b["len"] = { x ->
+            when (val v = x.getOrNull(0)) {
+                is List<*> -> v.size.toDouble()
+                is String -> v.length.toDouble()
+                else -> throw TrixError("len(x) precisa de lista ou texto")
+            }
+        }
+        b["push"] = { x ->
+            @Suppress("UNCHECKED_CAST")
+            val l = x.getOrNull(0) as? MutableList<Any?> ?: throw TrixError("push(lista, valor) precisa de uma lista")
+            l.add(x.getOrNull(1)); null
+        }
+        b["pop"] = { x ->
+            @Suppress("UNCHECKED_CAST")
+            val l = x.getOrNull(0) as? MutableList<Any?> ?: throw TrixError("pop(lista) precisa de uma lista")
+            if (l.isEmpty()) null else l.removeAt(l.size - 1)
+        }
+        b["remove"] = { x ->
+            @Suppress("UNCHECKED_CAST")
+            val l = x.getOrNull(0) as? MutableList<Any?> ?: throw TrixError("remove(lista, valor) precisa de uma lista")
+            l.remove(x.getOrNull(1))
+        }
+        b["contains"] = { x ->
+            val l = x.getOrNull(0) as? List<*> ?: throw TrixError("contains(lista, valor) precisa de uma lista")
+            l.contains(x.getOrNull(1))
+        }
     }
 
     fun load(src: String) {
@@ -350,15 +403,26 @@ class Interpreter(private val log: (String) -> Unit) {
                 while (truthy(eval(s.c, env))) { tick(); execBlock(s.body, Env(env)) }
             } catch (e: BreakEx) { }
             is ForS -> {
-                val lo = num(eval(s.a, env), s.line).toInt()
-                val hi = num(eval(s.b, env), s.line).toInt()
-                try {
-                    for (i in lo..hi) {
-                        tick()
-                        val e = Env(env); e.vars[s.v] = i.toDouble()
-                        execBlock(s.body, e)
-                    }
-                } catch (e: BreakEx) { }
+                if (s.b == null) {
+                    val lst = eval(s.a, env) as? List<*> ?: throw TrixError("for ... in precisa de uma lista ou de a..b", s.line)
+                    try {
+                        for (item in ArrayList(lst)) {
+                            tick()
+                            val e = Env(env); e.vars[s.v] = item
+                            execBlock(s.body, e)
+                        }
+                    } catch (e: BreakEx) { }
+                } else {
+                    val lo = num(eval(s.a, env), s.line).toInt()
+                    val hi = num(eval(s.b, env), s.line).toInt()
+                    try {
+                        for (i in lo..hi) {
+                            tick()
+                            val e = Env(env); e.vars[s.v] = i.toDouble()
+                            execBlock(s.body, e)
+                        }
+                    } catch (e: BreakEx) { }
+                }
             }
             is FuncS -> funcs[s.name] = s
             is RetS -> throw ReturnEx(s.e?.let { eval(it, env) })
@@ -375,6 +439,14 @@ class Interpreter(private val log: (String) -> Unit) {
             is Member -> {
                 val o = eval(t.o, env)
                 if (o is Props) o.set(t.n, v) else throw TrixError("não dá para mudar '${t.n}'", t.line)
+            }
+            is Index -> {
+                val o = eval(t.o, env)
+                val i = num(eval(t.i, env), t.line).toInt()
+                @Suppress("UNCHECKED_CAST")
+                val l = o as? MutableList<Any?> ?: throw TrixError("só dá para mudar itens de uma lista", t.line)
+                if (i < 0 || i >= l.size) throw TrixError("índice $i fora da lista (tamanho ${l.size})", t.line)
+                l[i] = v
             }
             else -> {}
         }
@@ -393,6 +465,16 @@ class Interpreter(private val log: (String) -> Unit) {
             if (o is Props) o.get(e.n) else throw TrixError("'${e.n}' não existe em ${typeName(o)}", e.line)
         }
         is Call -> doCall(e, env)
+        is ListLit -> ArrayList<Any?>(e.items.map { eval(it, env) })
+        is Index -> {
+            val o = eval(e.o, env)
+            val i = num(eval(e.i, env), e.line).toInt()
+            when (o) {
+                is List<*> -> { if (i < 0 || i >= o.size) throw TrixError("índice $i fora da lista (tamanho ${o.size})", e.line); o[i] }
+                is String -> { if (i < 0 || i >= o.length) throw TrixError("índice $i fora do texto", e.line); o[i].toString() }
+                else -> throw TrixError("só listas e textos aceitam [ ]", e.line)
+            }
+        }
         is Un -> {
             val v = eval(e.e, env)
             if (e.op == "not") !truthy(v) else -num(v, e.line)

@@ -46,7 +46,6 @@ fun PermissionScreen(onRequest: () -> Unit) {
     }
 }
 
-private val TEMPLATES = listOf("Vazio", "Coletar moedas", "Pulo com gravidade")
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -63,7 +62,7 @@ fun ProjectsScreen(onOpen: (File) -> Unit) {
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text("Trix Engine", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                    Text("Seus projetos • v0.2", fontSize = 12.sp, color = Color(0xFF94A3B8))
+                    Text("Seus projetos • v0.3", fontSize = 12.sp, color = Color(0xFF94A3B8))
                 }
             }
             if (projects.isEmpty()) {
@@ -132,7 +131,7 @@ fun ProjectsScreen(onOpen: (File) -> Unit) {
                     Spacer(Modifier.height(8.dp))
                     Text("Modelo", fontSize = 12.sp, color = Color(0xFF94A3B8))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        TEMPLATES.forEachIndexed { i, t ->
+                        Projects.TEMPLATE_NAMES.forEachIndexed { i, t ->
                             FilterChip(selected = template == i, onClick = { template = i }, label = { Text(t) })
                         }
                     }

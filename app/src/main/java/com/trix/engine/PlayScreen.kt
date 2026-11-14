@@ -8,11 +8,15 @@ import android.os.Vibrator
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -21,6 +25,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.trix.engine.lang.Interpreter
@@ -39,6 +44,26 @@ private fun vibrate(ctx: Context, ms: Long) {
 private class GameTimer(var at: Double, val every: Double, val fn: String)
 
 @Composable
+private fun PadButton(label: String, size: Dp, modifier: Modifier, onState: (Boolean) -> Unit) {
+    var down by remember { mutableStateOf(false) }
+    Box(
+        modifier.size(size).clip(CircleShape)
+            .background(if (down) Color(0x99FFFFFF) else Color(0x44FFFFFF))
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    down = true; onState(true)
+                    do {
+                        val ev = awaitPointerEvent()
+                    } while (ev.changes.any { it.pressed })
+                    down = false; onState(false)
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) { Text(label, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White) }
+}
+
+@Composable
 fun PlayScreen(dir: File, scene: List<GameObject>, settings: ProjectSettings, source: String, onExit: () -> Unit) {
     val ctx = LocalContext.current
     val objs = remember { ArrayList<GameObject>() }
@@ -48,12 +73,13 @@ fun PlayScreen(dir: File, scene: List<GameObject>, settings: ProjectSettings, so
     var fps by remember { mutableIntStateOf(0) }
     val xf = remember { ViewXf() }
     val touch = remember { TouchProps() }
+    val input = remember { InputProps() }
     val ww = settings.worldW.toFloat()
     val wh = settings.worldH.toFloat()
+    val cam = remember { CameraProps(ww / 2.0, wh / 2.0) }
 
     BackHandler { onExit() }
 
-    // A orientação do jogo vem das configurações do projeto
     DisposableEffect(Unit) {
         val activity = ctx as? Activity
         activity?.requestedOrientation =
@@ -70,12 +96,15 @@ fun PlayScreen(dir: File, scene: List<GameObject>, settings: ProjectSettings, so
                 var spawnId = 0
                 objs.clear()
                 objs.addAll(scene.map { it.copy() })
+                cam.x = ww / 2.0; cam.y = wh / 2.0; cam.zoom = 1.0; cam.target = null
                 val timers = ArrayList<GameTimer>()
                 val data = Projects.loadData(dir)
                 val vm = Interpreter { l -> logs.add(l); while (logs.size > 6) logs.removeAt(0) }
 
                 objs.forEach { vm.globals.vars[it.name] = it }
                 vm.globals.vars["touch"] = touch
+                vm.globals.vars["input"] = input
+                vm.globals.vars["camera"] = cam
                 vm.globals.vars["screen"] = ScreenProps(ww.toDouble(), wh.toDouble())
                 vm.globals.vars["PI"] = Math.PI
                 vm.globals.vars["time"] = 0.0
@@ -129,6 +158,35 @@ fun PlayScreen(dir: File, scene: List<GameObject>, settings: ProjectSettings, so
                         if (v is Number) v.toDouble() else v
                     } else x.getOrNull(1)
                 }
+                b["follow"] = { x ->
+                    cam.target = x.getOrNull(0) as? GameObject
+                    cam.smooth = (x.getOrNull(1) as? Double) ?: 0.0
+                    null
+                }
+                b["unfollow"] = { _ -> cam.target = null; null }
+                b["play"] = { x ->
+                    val o = x.getOrNull(0) as? GameObject ?: throw TrixError("play(obj, \"animacao\")")
+                    val n = x.getOrNull(1) as? String ?: throw TrixError("play(obj, \"animacao\")")
+                    if (o.anim != n) { o.anim = n; o.frameT = 0.0 }
+                    o.playing = true
+                    null
+                }
+                b["tile_get"] = { x ->
+                    val m = x.getOrNull(0) as? GameObject ?: throw TrixError("tile_get(mapa, x, y)")
+                    val tx = (x.getOrNull(1) as? Double) ?: 0.0
+                    val ty = (x.getOrNull(2) as? Double) ?: 0.0
+                    m.tileAt(Math.floor((tx - m.x) / m.tileSize).toInt(), Math.floor((ty - m.y) / m.tileSize).toInt()).toDouble()
+                }
+                b["tile_set"] = { x ->
+                    val m = x.getOrNull(0) as? GameObject ?: throw TrixError("tile_set(mapa, x, y, id)")
+                    val tx = (x.getOrNull(1) as? Double) ?: 0.0
+                    val ty = (x.getOrNull(2) as? Double) ?: 0.0
+                    val id = ((x.getOrNull(3) as? Double) ?: 0.0).toInt().coerceIn(0, TileSet.count - 1)
+                    m.setTile(Math.floor((tx - m.x) / m.tileSize).toInt(), Math.floor((ty - m.y) / m.tileSize).toInt(), id)
+                    null
+                }
+                b["tile_name"] = { x -> TileSet.name(((x.getOrNull(0) as? Double) ?: 0.0).toInt()) }
+                b["tile_solid"] = { x -> TileSet.solid(((x.getOrNull(0) as? Double) ?: 0.0).toInt()) }
 
                 vm.load(source)
                 if (vm.has("start")) vm.call("start", emptyList())
@@ -142,6 +200,7 @@ fun PlayScreen(dir: File, scene: List<GameObject>, settings: ProjectSettings, so
                     last = now
                     time += dt
                     vm.globals.vars["time"] = time
+                    input.beginFrame()
 
                     if (vm.has("update")) vm.call("update", listOf(dt))
 
@@ -153,11 +212,8 @@ fun PlayScreen(dir: File, scene: List<GameObject>, settings: ProjectSettings, so
                         }
                     }
 
-                    for (o in objs) {
-                        if (o.gravity) o.vy += settings.gravity * dt
-                        o.x += o.vx * dt
-                        o.y += o.vy * dt
-                    }
+                    Physics.step(objs, dt, settings.gravity)
+                    cam.update(dt)
                     touch.tapped = false
                     frame++
 
@@ -193,10 +249,16 @@ fun PlayScreen(dir: File, scene: List<GameObject>, settings: ProjectSettings, so
         ) {
             val f = frame // força redesenho a cada frame
             xf.cw = size.width; xf.ch = size.height
-            xf.fit(ww, wh, 1f)
-            drawRect(Color(settings.bg), Offset(xf.ox, xf.oy), Size(ww * xf.sc, wh * xf.sc))
-            clipRect(xf.ox, xf.oy, xf.ox + ww * xf.sc, xf.oy + wh * xf.sc) {
-                drawObjects(objs, xf.sc, xf.ox, xf.oy)
+            val base = minOf(size.width / ww, size.height / wh)
+            val fx = (size.width - ww * base) / 2f
+            val fy = (size.height - wh * base) / 2f
+            xf.sc = base * cam.zoom.toFloat()
+            xf.ox = size.width / 2f - cam.x.toFloat() * xf.sc
+            xf.oy = size.height / 2f - cam.y.toFloat() * xf.sc
+            drawRect(Color(settings.bg), Offset(fx, fy), Size(ww * base, wh * base))
+            clipRect(fx, fy, fx + ww * base, fy + wh * base) {
+                drawObjects(objs, xf.sc, xf.ox, xf.oy, 0, settings.showCollisions)
+                drawObjects(objs, base, fx, fy, 1, false)
             }
         }
 
@@ -212,7 +274,24 @@ fun PlayScreen(dir: File, scene: List<GameObject>, settings: ProjectSettings, so
             )
         }
 
-        Column(Modifier.align(Alignment.BottomStart).windowInsetsPadding(WindowInsets.safeDrawing).padding(10.dp)) {
+        if (settings.gamepad) {
+            Row(
+                Modifier.align(Alignment.BottomStart).windowInsetsPadding(WindowInsets.safeDrawing).padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Bottom
+            ) {
+                PadButton("◀", 64.dp, Modifier) { input.left = it }
+                PadButton("▶", 64.dp, Modifier) { input.right = it }
+            }
+            Row(
+                Modifier.align(Alignment.BottomEnd).windowInsetsPadding(WindowInsets.safeDrawing).padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Bottom
+            ) {
+                PadButton("B", 54.dp, Modifier) { input.b = it }
+                PadButton("A", 72.dp, Modifier) { input.a = it }
+            }
+        }
+
+        Column(Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.safeDrawing).padding(top = 52.dp, start = 10.dp)) {
             logs.forEach { Text(it, color = Color(0xFF86EFAC), fontSize = 12.sp, fontFamily = FontFamily.Monospace) }
         }
 

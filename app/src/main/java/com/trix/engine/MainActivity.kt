@@ -23,6 +23,16 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
         )
+
+        // Jogo exportado: o APK carrega o projeto em assets/game e abre direto no jogo.
+        val packed = try { assets.list("game")?.contains("scene.json") == true } catch (e: Exception) { false }
+        if (packed) {
+            val gameDir = File(filesDir, "game")
+            try { copyAssets("game", gameDir) } catch (e: Exception) { }
+            setContent { TrixTheme { StandaloneGame(gameDir) { finish() } } }
+            return
+        }
+
         setContent {
             TrixTheme {
                 val access = remember(tick.intValue) { Projects.hasAccess(this) }
@@ -33,6 +43,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() { super.onResume(); tick.intValue++ }
 
+    private fun copyAssets(path: String, dest: File) {
+        val list = assets.list(path) ?: return
+        if (list.isEmpty()) {
+            dest.parentFile?.mkdirs()
+            assets.open(path).use { i -> dest.outputStream().use { o -> i.copyTo(o) } }
+        } else {
+            dest.mkdirs()
+            for (name in list) copyAssets("$path/$name", File(dest, name))
+        }
+    }
 
     private fun requestAccess() {
         if (Build.VERSION.SDK_INT >= 30) {
@@ -45,6 +65,15 @@ class MainActivity : ComponentActivity() {
             requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE), 1)
         }
     }
+}
+
+@Composable
+fun StandaloneGame(dir: File, onExit: () -> Unit) {
+    val scene = remember { Projects.loadScene(dir) }
+    val settings = remember { Projects.loadSettings(dir) }
+    val script = remember { Projects.readScript(dir) }
+    remember { Images.dir = Projects.assetsDir(dir) }
+    PlayScreen(dir, scene, settings, script, onExit)
 }
 
 @Composable

@@ -4,6 +4,12 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val gameSlug: String? = providers.gradleProperty("gameSlug").orNull
+val gameName: String = gameSlug
+    ?.let { rootProject.file("games/$it/.name") }
+    ?.takeIf { it.exists() }?.readText()?.trim()
+    ?: "Trix Engine"
+
 android {
     namespace = "com.trix.engine"
     compileSdk = 34
@@ -11,8 +17,12 @@ android {
         applicationId = "com.trix.engine"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
+        if (gameSlug != null) {
+            applicationId = "com.trix.game.g$gameSlug"
+        }
+        manifestPlaceholders["appLabel"] = gameName
     }
     signingConfigs {
         getByName("debug") {

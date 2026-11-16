@@ -1,0 +1,22 @@
+{
+  "author": "",
+  "description": "",
+  "version": "1.0",
+  "worldW": 800,
+  "worldH": 450,
+  "bg": "#2563EB",
+  "gravity": 787.5,
+  "showFps": false,
+  "showGrid": false,
+  "grid": 10,
+  "gamepad": true,
+  "showCollisions": false,
+  "mode": "2d",
+  "mainScene": "scenes\/main.scene",
+  "camX": 0,
+  "camY": 5,
+  "camZ": -10,
+  "camYaw": 0,
+  "camPitch": -20,
+  "camFov": 60
+}

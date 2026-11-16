@@ -1,0 +1,108 @@
+# Estilo Sonic — baseado no "Sonic Physics Guide"
+# Constantes em px/frame (60 fps). O motor usa px/s, por isso x60.
+# O corpo usa stick = true no chão: ele segue rampas sozinho.
+
+var acc = 0.046875
+var dec = 0.5
+var frc = 0.046875
+var top = 6
+var slp = 0.125
+var jmp = 6.5
+var air = 0.09375
+var gsp = 0
+var score = 0
+var rings = []
+
+func start()
+    follow(self, 7)
+    for i in 0..29
+        var r = spawn(ring)
+        r.x = 300 + i * 80
+        r.y = 360 - sin(i * 0.5) * 30
+        push(rings, r)
+    end
+    hud.text = "Anéis: 0"
+end
+
+func update(dt)
+    var f = dt * 60
+    var dir = 0
+    if input.left
+        dir = -1
+    end
+    if input.right
+        dir = 1
+    end
+
+    if self.grounded
+        self.stick = true
+        var ang = rad(self.ground_angle)
+        if self.wall != 0
+            gsp = 0
+        end
+
+        # aceleração, frenagem e atrito
+        if dir != 0
+            if dir * gsp < 0
+                gsp += dir * dec * f
+            elif abs(gsp) < top
+                gsp += dir * acc * f
+                if abs(gsp) > top
+                    gsp = dir * top
+                end
+            end
+        else
+            gsp -= min(abs(gsp), frc * f) * sign(gsp)
+        end
+
+        # fator de inclinação (sobe devagar, desce rápido)
+        gsp -= slp * sin(ang) * f
+        self.vx = gsp * cos(ang) * 60
+
+        # pulo na direção da normal do chão
+        if input.a_pressed
+            self.stick = false
+            self.vx -= jmp * sin(ang) * 60
+            self.vy = -jmp * cos(ang) * 60
+            tone(660, 80)
+        end
+        self.rotation += gsp * 8 * f
+    else
+        self.stick = false
+
+        # controle no ar
+        if dir != 0
+            self.vx += dir * air * 3600 * dt
+            self.vx = clamp(self.vx, -top * 60, top * 60)
+        end
+
+        # altura do pulo variável
+        if not input.a and self.vy < -240
+            self.vy = -240
+        end
+
+        # resistência do ar
+        if self.vy < 0 and self.vy > -240
+            if abs(self.vx) >= 7.5
+                self.vx *= pow(0.96875, f)
+            end
+        end
+        gsp = self.vx / 60
+        self.rotation += 600 * dt
+    end
+
+    # anéis
+    for r in rings
+        if overlaps(self, r)
+            remove(rings, r)
+            destroy(r)
+            score += 1
+            hud.text = "Anéis: " + score
+            tone(1200, 50)
+        end
+    end
+
+    if self.y > 700
+        restart()
+    end
+end

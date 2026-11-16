@@ -31,7 +31,7 @@ private fun Section(title: String, startOpen: Boolean = true, content: @Composab
 
 private fun typeLabel(o: GameObject) = when (o.type) {
     "part" -> "Parte"; "text" -> "Texto"; "sprite" -> "Sprite"; "anim" -> "Sprite Animado"
-    "collision" -> if (o.trigger) "Gatilho" else "Forma de Colisão"; "tilemap" -> "Tilemap"; else -> o.type
+    "collision" -> if (o.trigger) "Gatilho" else "Forma de Colisão"; "tilemap" -> "Tilemap"; "mesh" -> "Malha 3D"; else -> o.type
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -55,6 +55,11 @@ private fun InspectorBody(st: EditorState, o: GameObject, pick: ((List<String>) 
     val rev = st.rev
     val edit = { st.edited() }
     val isShape = o.type == "part" || o.type == "collision"
+
+    if (o.type == "mesh") {
+        MeshBody(st, o)
+        return
+    }
 
     Section("Objeto") {
         var name by remember { mutableStateOf(o.name) }
@@ -160,6 +165,8 @@ private fun InspectorBody(st: EditorState, o: GameObject, pick: ((List<String>) 
     if (o.type == "anim") AnimSection(st, o, pick)
     if (o.type == "tilemap") TilemapSection(st, o)
 
+    ScriptSection(st, o)
+
     Section("Visibilidade") {
         if (o.type != "collision") SwitchRow("Visível no início", o.visible) { o.visible = it; edit() }
         else Text("Formas de colisão são invisíveis no jogo.", fontSize = 11.sp, color = Color(0xFF94A3B8))
@@ -174,8 +181,8 @@ private fun AnimSection(st: EditorState, o: GameObject, pick: ((List<String>) ->
         Text("Origem dos quadros", fontSize = 11.sp, color = Color(0xFF94A3B8))
         ChipRow(listOf("sheet" to "Spritesheet", "files" to "Imagens soltas"), o.animMode) { o.animMode = it; edit() }
         if (o.animMode == "sheet") {
-            OutlinedButton(onClick = { pick { n -> o.sheet = n.first() } }) {
-                Text(if (o.sheet.isEmpty()) "Escolher spritesheet…" else "Trocar spritesheet", fontSize = 12.sp)
+            OutlinedButton(onClick = { pick { n -> st.applyAnimImages(o, n) } }) {
+                Text(if (o.sheet.isEmpty()) "Escolher spritesheet ou GIF…" else "Trocar spritesheet / GIF", fontSize = 12.sp)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 NumField("Quadro L", o.fw, { o.fw = it.coerceAtLeast(1.0); edit() }, Modifier.weight(1f))
@@ -191,7 +198,7 @@ private fun AnimSection(st: EditorState, o: GameObject, pick: ((List<String>) ->
             }
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = { pick { n -> o.frameFiles.addAll(n) } }) { Text("＋ Adicionar imagens", fontSize = 12.sp) }
+                OutlinedButton(onClick = { pick { n -> st.applyAnimImages(o, n) } }) { Text("＋ Adicionar imagens ou GIF", fontSize = 12.sp) }
                 if (o.frameFiles.isNotEmpty()) TextButton(onClick = { o.frameFiles.clear(); edit() }) { Text("Limpar") }
             }
             Text("${o.frameFiles.size} quadros (índices 0 a ${Math.max(0, o.frameFiles.size - 1)})", fontSize = 11.sp, color = Color(0xFF94A3B8))
@@ -273,4 +280,90 @@ private fun TilemapSection(st: EditorState, o: GameObject) {
         Text("Blocos sólidos: Grama, Terra, Pedra, Madeira, Folhas, Tijolo, Bloco ?, Areia, Ouro.", fontSize = 10.sp, color = Color(0xFF94A3B8))
         Text("No código: tile_get(mapa,x,y)  tile_set(mapa,x,y,id)", fontSize = 10.sp, color = Color(0xFF94A3B8))
     }
+}
+
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun ScriptSection(st: EditorState, o: GameObject) {
+    Section("Script", startOpen = o.script.isNotEmpty()) {
+        if (o.script.isEmpty()) Text("Nenhum script anexado a este objeto.", fontSize = 11.sp, color = Color(0xFF94A3B8))
+        else Text("📜 ${o.script}", fontSize = 12.sp, color = Cyan)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedButton(onClick = { st.attachTarget = o }) { Text("Anexar…", fontSize = 12.sp) }
+            OutlinedButton(onClick = { st.newScriptTarget = o }) { Text("Novo…", fontSize = 12.sp) }
+            if (o.script.isNotEmpty()) {
+                OutlinedButton(onClick = { st.currentScript = o.script; st.wantTab = 1 }) { Text("Abrir", fontSize = 12.sp) }
+                TextButton(onClick = { o.script = ""; st.edited() }) { Text("Remover") }
+            }
+        }
+        Text("Dentro do script, 'self' é este objeto.", fontSize = 10.sp, color = Color(0xFF94A3B8))
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun MeshBody(st: EditorState, o: GameObject) {
+    val edit = { st.edited() }
+    Section("Objeto") {
+        var name by remember { mutableStateOf(o.name) }
+        OutlinedTextField(
+            value = name,
+            onValueChange = { raw ->
+                var n = raw.filter { it.isLetterOrDigit() || it == '_' }
+                if (n.firstOrNull()?.isDigit() == true) n = "_$n"
+                name = n
+                if (n.isNotEmpty()) { o.name = n; edit() }
+            },
+            label = { Text("Nome (usado no código)", fontSize = 11.sp) }, singleLine = true, modifier = Modifier.fillMaxWidth()
+        )
+        Text("Tipo: Malha 3D", fontSize = 11.sp, color = Color(0xFF94A3B8))
+        Text("Forma", fontSize = 11.sp, color = Color(0xFF94A3B8))
+        ChipRow(listOf("box" to "Cubo", "sphere" to "Esfera", "plane" to "Plano", "cylinder" to "Cilindro", "pyramid" to "Pirâmide"), o.shape) { o.shape = it; edit() }
+    }
+    Section("Transformação") {
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            NumField("X", o.x, { o.x = it; edit() }, Modifier.weight(1f))
+            NumField("Y", o.y, { o.y = it; edit() }, Modifier.weight(1f))
+            NumField("Z", o.z, { o.z = it; edit() }, Modifier.weight(1f))
+        }
+        Text("Tamanho", fontSize = 11.sp, color = Color(0xFF94A3B8))
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            NumField("Larg.", o.w, { o.w = it.coerceAtLeast(0.01); edit() }, Modifier.weight(1f))
+            NumField("Alt.", o.h, { o.h = it.coerceAtLeast(0.01); edit() }, Modifier.weight(1f))
+            NumField("Prof.", o.d, { o.d = it.coerceAtLeast(0.01); edit() }, Modifier.weight(1f))
+        }
+        Text("Rotação (graus)", fontSize = 11.sp, color = Color(0xFF94A3B8))
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            NumField("RX", o.rx, { o.rx = it; edit() }, Modifier.weight(1f))
+            NumField("RY", o.ry, { o.ry = it; edit() }, Modifier.weight(1f))
+            NumField("RZ", o.rotation, { o.rotation = it; edit() }, Modifier.weight(1f))
+        }
+    }
+    Section("Aparência") {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SWATCHES.forEach { hex ->
+                val c = android.graphics.Color.parseColor(hex)
+                Box(
+                    Modifier.size(28.dp).clip(CircleShape).background(Color(c))
+                        .border(if (o.color == c) 3.dp else 1.dp, if (o.color == c) Color.White else Color(0x55FFFFFF), CircleShape)
+                        .clickable { o.color = c; edit() }
+                )
+            }
+        }
+    }
+    Section("Física", startOpen = o.body != "none") {
+        Text("Corpo", fontSize = 11.sp, color = Color(0xFF94A3B8))
+        ChipRow(listOf("none" to "Nenhum", "static" to "Estático", "dynamic" to "Dinâmico"), o.body) { o.body = it; edit() }
+        if (o.body == "static") SwitchRow("Gatilho (não bloqueia)", o.trigger) { o.trigger = it; edit() }
+        SwitchRow("Afetado pela gravidade", o.gravity) { o.gravity = it; edit() }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            NumField("Vel X", o.vx, { o.vx = it; edit() }, Modifier.weight(1f))
+            NumField("Vel Y", o.vy, { o.vy = it; edit() }, Modifier.weight(1f))
+            NumField("Vel Z", o.vz, { o.vz = it; edit() }, Modifier.weight(1f))
+        }
+        Text("Corpo dinâmico colide com blocos estáticos (caixas alinhadas aos eixos).", fontSize = 10.sp, color = Color(0xFF94A3B8))
+    }
+    ScriptSection(st, o)
+    Section("Visibilidade") { SwitchRow("Visível no início", o.visible) { o.visible = it; edit() } }
 }

@@ -5,6 +5,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
@@ -77,8 +79,24 @@ fun SettingsTab(dir: File, s: ProjectSettings, onExport: () -> Unit, onChange: (
             }
         }
 
+        Title(if (s.is3d) "Projeto 3D" else "Projeto 2D")
+        Text("Cena principal: ${s.mainScene}", fontSize = 12.sp, color = grey, fontFamily = FontFamily.Monospace)
+        if (s.is3d) {
+            Text("Câmera inicial (no código: camera.x/y/z, camera.yaw, camera.pitch)", fontSize = 11.sp, color = grey)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.widthIn(max = 420.dp)) {
+                NumField("Cam X", s.camX, { onChange(s.copy(camX = it)) }, Modifier.weight(1f))
+                NumField("Cam Y", s.camY, { onChange(s.copy(camY = it)) }, Modifier.weight(1f))
+                NumField("Cam Z", s.camZ, { onChange(s.copy(camZ = it)) }, Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.widthIn(max = 420.dp)) {
+                NumField("Yaw", s.camYaw, { onChange(s.copy(camYaw = it)) }, Modifier.weight(1f))
+                NumField("Pitch", s.camPitch, { onChange(s.copy(camPitch = it)) }, Modifier.weight(1f))
+                NumField("FOV", s.camFov, { onChange(s.copy(camFov = it.coerceIn(10.0, 140.0))) }, Modifier.weight(1f))
+            }
+        }
+
         Title("Controles")
-        SwitchRow("Botões na tela (setas + A/B)", s.gamepad) { onChange(s.copy(gamepad = it)) }
+        SwitchRow(if (s.is3d) "Botões na tela (◀ ▶ ▲ ▼ + A/B)" else "Botões na tela (setas + A/B)", s.gamepad) { onChange(s.copy(gamepad = it)) }
         Text("No código: input.left  input.right  input.a  input.b  input.a_pressed  input.b_pressed", fontSize = 11.sp, color = grey)
 
         Title("Física")
@@ -193,9 +211,65 @@ fun CodeTab(script: TextFieldValue, onChange: (TextFieldValue) -> Unit) {
     }
 }
 
+// ------------------------------------------------------------------ SCRIPTS (.tr)
+
+@Composable
+fun ScriptTab(st: EditorState, onNew: () -> Unit) {
+    val scripts = remember(st.rev, st.dirtyScripts.size, st.currentScript) { Projects.listRel(st.dir, ".tr") }
+    var confirmDelete by remember { mutableStateOf<String?>(null) }
+    Row(Modifier.fillMaxSize()) {
+        Column(Modifier.width(190.dp).fillMaxHeight().background(Surf)) {
+            DockHeader("Scripts (.tr)") {
+                Text("＋ novo", fontSize = 11.sp, color = Cyan, modifier = Modifier.clickable { onNew() }.padding(horizontal = 6.dp))
+            }
+            LazyColumn(Modifier.weight(1f)) {
+                items(scripts) { path ->
+                    val users = st.objects.count { it.script == path } + (if (st.sceneScript == path) 1 else 0)
+                    Column(
+                        Modifier.fillMaxWidth().background(if (path == st.currentScript) Color(0xFF33407A) else Color.Transparent)
+                            .clickable { st.currentScript = path }.padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Text("📜 ${path.substringAfterLast('/')}" + if (path in st.dirtyScripts) " ●" else "", fontSize = 13.sp, maxLines = 1)
+                        Text(path + if (users > 0) "  •  $users uso(s)" else "", fontSize = 10.sp, color = Color(0xFF94A3B8), maxLines = 1)
+                    }
+                }
+                if (scripts.isEmpty()) item { Text("Nenhum script.\nToque em ＋ novo.", fontSize = 12.sp, color = Color(0xFF94A3B8), modifier = Modifier.padding(10.dp)) }
+            }
+            Text(
+                "Anexe um script a um objeto no Inspetor (seção Script). Dentro dele, 'self' é o objeto.",
+                fontSize = 10.sp, color = Color(0xFF94A3B8), modifier = Modifier.padding(10.dp)
+            )
+        }
+        val cur = st.currentScript
+        if (cur == null) {
+            Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                Text("Escolha um script na lista\nou crie um novo.", color = Color(0xFF94A3B8))
+            }
+        } else {
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                Row(Modifier.fillMaxWidth().background(Surf2).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(cur, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { Projects.writeText(st.dir, cur, st.scriptValue(cur).text); st.dirtyScripts.remove(cur) }) { Text("Salvar") }
+                    TextButton(onClick = { confirmDelete = cur }) { Text("Apagar", color = Color(0xFFF87171)) }
+                }
+                CodeTab(st.scriptValue(cur)) { st.setScript(cur, it) }
+            }
+        }
+    }
+    confirmDelete?.let { p ->
+        AlertDialog(
+            onDismissRequest = { confirmDelete = null },
+            title = { Text("Apagar script?") },
+            text = { Text("$p será apagado e removido dos objetos que o usam.") },
+            confirmButton = { TextButton(onClick = { st.deleteScript(p); confirmDelete = null }) { Text("Apagar", color = Color(0xFFF87171)) } },
+            dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("Cancelar") } }
+        )
+    }
+}
+
 // ------------------------------------------------------------------ AJUDA
 
-private const val HELP = """TRIXSCRIPT — referência rápida
+private const val HELP = """TRIXSCRIPT (.tr) — referência rápida
 
 # comentário
 var vida = 3
@@ -213,19 +287,41 @@ while x < 10 ... end
 for i in 1..5 ... end      (break sai)
 for item in lista ... end
 
-OBJETOS (o nome vira variável)
+SCRIPTS POR OBJETO
+  Anexe um .tr a um objeto (Inspetor > Script).
+  Dentro dele, self = o objeto. Outros objetos
+  são acessados pelo nome. Cada script tem as
+  suas próprias variáveis.
+  game.pontos = 0   -> valores compartilhados
+  call_on(obj, "funcao", args...)  -> chama
+  uma função do script de outro objeto.
+  Também há o script da cena (global).
+
+CENAS
+  goto_scene("scenes/fase2.scene")
+  restart()
+
+OBJETOS 2D (o nome vira variável)
   x y w h vx vy rotation alpha
   text visible gravity fixed flipx
   color = "#FF8800"   image = "arquivo"
   shape = "box|circle|wedge|capsule|triangle"
-FÍSICA (body = "none|static|dynamic")
+FÍSICA 2D (body = "none|static|dynamic")
   stick  stepup  bounce  trigger
   só leitura: grounded ground_angle wall ceiling
-ANIMAÇÃO (Sprite Animado)
+ANIMAÇÃO (Sprite Animado; GIF vira quadros)
   play(obj,"correr")   obj.anim = "pular"
   obj.playing  obj.animspeed  obj.frame
 
-ENTRADA, TELA E CÂMERA
+OBJETOS 3D (Malha 3D)
+  x y z   w h d   rx ry rotation(rz)  vx vy vz
+  shape = "box|sphere|plane|cylinder|pyramid"
+  body, gravity, grounded, wall
+  overlaps3d(a,b)  dist3d(a,b)
+  camera.x y z yaw pitch fov
+  follow3d(obj, distância, altura, suavidade)
+
+ENTRADA, TELA E CÂMERA 2D
   touch.x touch.y touch.down touch.tapped
   input.left right up down a b a_pressed b_pressed
   screen.w screen.h    time
@@ -240,7 +336,7 @@ JOGO
   spawn(obj) clone   destroy(obj)   find("nome")
   clicked(obj)  overlaps(a,b)  dist(a,b)
   after(2,"fn")  every(1,"fn")
-  save("k",v)  load("k",padrão)   restart()
+  save("k",v)  load("k",padrão)
 
 SOM / VIBRAÇÃO
   tone(freq, ms)   beep()   vibrate(ms)
@@ -253,19 +349,19 @@ MATEMÁTICA E LISTAS
   push pop remove contains len str print
 
 FÍSICA ESTILO SONIC
-  Marque o corpo como Dinâmico, ligue "Colar no
-  chão" (stick) e use rampas (Parte > Rampa).
-  Leia sonic.ground_angle (graus, positivo em "/")
-  e aplique vx = gsp * cos(rad(ang)) * 60.
+  Corpo Dinâmico + "Colar no chão" (stick) e
+  rampas. Leia self.ground_angle (graus) e use
+  vx = gsp * cos(rad(ang)) * 60.
   Veja o modelo "Estilo Sonic".
 
-DICAS
-- Origem (x,y) = CENTRO (Tilemap = canto).
-- Editor: arraste um objeto para mover, use as
-  alças brancas para redimensionar, arraste o fundo
-  para mover a vista, 2 dedos para zoom.
-- Objeto invisível serve de molde p/ spawn().
-- Menu Projeto > Exportar APK.
+EDITOR
+- Arraste um objeto para mover; alças brancas
+  redimensionam (2D). Arraste o fundo para mover
+  a vista; 2 dedos = zoom.
+- Nada é salvo sozinho: Cena > Salvar. Ao testar,
+  o app pergunta se quer salvar (e em qual pasta).
+- Importar projeto: tela inicial > Importar.
+- Menu Projeto > Exportar APK / Exportar .zip.
 """
 
 @Composable

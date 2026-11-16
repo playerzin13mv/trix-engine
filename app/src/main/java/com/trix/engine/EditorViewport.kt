@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -213,15 +214,15 @@ fun SceneViewport(st: EditorState, modifier: Modifier = Modifier) {
                 val y0 = (-oy) / sc; val y1 = (size.height - oy) / sc
                 val gs = s.grid.coerceAtLeast(1)
                 if (gs * sc >= 8f) {
-                    var gx = (Math.floor(x0 / gs) * gs).toInt()
+                    var gx = (kotlin.math.floor(x0 / gs) * gs).toInt()
                     while (gx <= x1) { drawLine(Color(0x0DFFFFFF), Offset(ox + gx * sc, 0f), Offset(ox + gx * sc, size.height)); gx += gs }
-                    var gy = (Math.floor(y0 / gs) * gs).toInt()
+                    var gy = (kotlin.math.floor(y0 / gs) * gs).toInt()
                     while (gy <= y1) { drawLine(Color(0x0DFFFFFF), Offset(0f, oy + gy * sc), Offset(size.width, oy + gy * sc)); gy += gs }
                 }
                 val major = if (sc < 0.25f) 400 else if (sc < 0.6f) 100 else 50
-                var mx = (Math.floor(x0 / major) * major).toInt()
+                var mx = (kotlin.math.floor(x0 / major) * major).toInt()
                 while (mx <= x1) { drawLine(Color(0x1CFFFFFF), Offset(ox + mx * sc, 0f), Offset(ox + mx * sc, size.height)); mx += major }
-                var my = (Math.floor(y0 / major) * major).toInt()
+                var my = (kotlin.math.floor(y0 / major) * major).toInt()
                 while (my <= y1) { drawLine(Color(0x1CFFFFFF), Offset(0f, oy + my * sc), Offset(size.width, oy + my * sc)); my += major }
             }
 

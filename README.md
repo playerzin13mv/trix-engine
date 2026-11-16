@@ -1,4 +1,4 @@
-# Trix Engine 🎮 (v0.3)
+# Trix Engine 🎮 (v0.4)
 
 Engine de jogos 2D **nativa para Android** (Kotlin + Jetpack Compose, sem navegador/WebView),
 com linguagem própria: **TrixScript** (`.trix`).
@@ -46,3 +46,12 @@ end
 - Física de plataforma (corpo estático/dinâmico, rampas, stick no chão), câmera, botões na tela, listas
 - Modelos: Mario, Sonic, Minecraft (2D)
 - Exportar APK: `bash export.sh "Nome do Projeto"` (GitHub Actions)
+
+
+## v0.4
+- Scripts `.tr`, vários por projeto, anexados a objetos (`self`) ou à cena; `game.x` compartilhado; `call_on`
+- Cenas (`.scene`) em qualquer pasta do projeto (`res://`), `goto_scene`, cena principal
+- Nada é salvo sozinho: ao testar/sair o app pergunta se quer salvar e em qual pasta
+- Importar projeto (.zip ou pasta) e exportar .zip
+- Projetos 3D simples (malhas, câmera, física AABB, `follow3d`)
+- GIF no Sprite Animado: os quadros são cortados automaticamente

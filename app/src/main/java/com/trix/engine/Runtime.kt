@@ -49,6 +49,13 @@ class ScreenProps(private val w: Double, private val h: Double) : Props {
     override fun set(n: String, v: Any?) { throw TrixError("screen é somente leitura") }
 }
 
+/** Variáveis compartilhadas entre todos os scripts: game.pontos = 0 */
+class GameVars : Props {
+    val m = HashMap<String, Any?>()
+    override fun get(n: String): Any? = m[n]
+    override fun set(n: String, v: Any?) { m[n] = v }
+}
+
 /** Botões virtuais: input.left/right/up/down/a/b e input.a_pressed/b_pressed. */
 class InputProps : Props {
     var left = false; var right = false; var up = false; var down = false
@@ -214,6 +221,7 @@ fun DrawScope.drawObjects(list: List<GameObject>, sc: Float, ox: Float, oy: Floa
     val vw = size.width
     val vh = size.height
     for (o in list) {
+        if (o.type == "mesh") continue
         if (fixedPass == 0 && o.fixed) continue
         if (fixedPass == 1 && !o.fixed) continue
         if (o.type == "tilemap") {

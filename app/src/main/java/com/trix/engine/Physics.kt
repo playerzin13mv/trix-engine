@@ -7,7 +7,7 @@ package com.trix.engine
  *  - stick = true     : o corpo "cola" no chão e segue rampas (ideal para física estilo Sonic)
  */
 private class Sol(val l: Double, val t: Double, val r: Double, val b: Double, val wedge: Int)
-private class Surf(val y: Double, val angle: Double)
+private class Hit(val y: Double, val angle: Double)
 
 object Physics {
 
@@ -64,7 +64,7 @@ object Physics {
         return s.b - (s.b - s.t) * k
     }
 
-    private fun best(xs: DoubleArray, minY: Double, maxY: Double, sols: List<Sol>): Surf? {
+    private fun best(xs: DoubleArray, minY: Double, maxY: Double, sols: List<Sol>): Hit? {
         var by = Double.MAX_VALUE
         var ang = 0.0
         var found = false
@@ -78,7 +78,7 @@ object Physics {
                 }
             }
         }
-        return if (found) Surf(by, ang) else null
+        return if (found) Hit(by, ang) else null
     }
 
     private fun moveBody(o: GameObject, dt: Double, g: Double, solids: List<GameObject>, maps: List<GameObject>) {

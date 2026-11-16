@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity() {
         )
 
         // Jogo exportado: o APK carrega o projeto em assets/game e abre direto no jogo.
-        val packed = try { assets.list("game")?.contains("scene.json") == true } catch (e: Exception) { false }
+        val packed = try { assets.list("game")?.let { it.contains("project.json") || it.contains("scene.json") || it.contains("scenes") } == true } catch (e: Exception) { false }
         if (packed) {
             val gameDir = File(filesDir, "game")
             try { copyAssets("game", gameDir) } catch (e: Exception) { }
@@ -69,11 +69,10 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun StandaloneGame(dir: File, onExit: () -> Unit) {
-    val scene = remember { Projects.loadScene(dir) }
-    val settings = remember { Projects.loadSettings(dir) }
-    val script = remember { Projects.readScript(dir) }
+    val settings = remember { Projects.migrate(dir); Projects.loadSettings(dir) }
+    val scene = remember { Projects.loadMainScene(dir, settings).second }
     remember { Images.dir = Projects.assetsDir(dir) }
-    PlayScreen(dir, scene, settings, script, onExit)
+    PlayScreen(dir, scene, settings, { Projects.readText(dir, it) }, onExit)
 }
 
 @Composable

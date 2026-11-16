@@ -106,46 +106,73 @@ fun SceneTree(st: EditorState, onAdd: () -> Unit, modifier: Modifier = Modifier)
 
 // ---------------------------------------------------------------- arquivos
 
-private fun assignImage(o: GameObject, name: String) {
+private fun assignImage(st: EditorState, o: GameObject, name: String) {
     when (o.type) {
-        "anim" -> if (o.animMode == "files") o.frameFiles.add(name) else o.sheet = name
+        "anim" -> st.applyAnimImages(o, listOf(name))
         "part", "sprite" -> o.image = name
     }
 }
 
+private class FEntry(val rel: String, val name: String, val isDir: Boolean, val depth: Int)
+
+private fun tree(dir: File): List<FEntry> {
+    val out = ArrayList<FEntry>()
+    fun walk(f: File, prefix: String, depth: Int) {
+        if (depth > 4) return
+        val kids = f.listFiles()?.filter { !it.name.startsWith(".") && it.name != "save.json" } ?: return
+        val sorted = kids.sortedWith(compareBy({ !it.isDirectory }, { it.name }))
+        for (k in sorted) {
+            val rel = if (prefix.isEmpty()) k.name else prefix + "/" + k.name
+            out.add(FEntry(rel, k.name, k.isDirectory, depth))
+            if (k.isDirectory) walk(k, rel, depth + 1)
+        }
+    }
+    walk(dir, "", 0)
+    return out
+}
+
 @Composable
-fun FilesPanel(st: EditorState, onOpenScript: () -> Unit, onOpenSettings: () -> Unit, onImport: () -> Unit, modifier: Modifier = Modifier) {
+fun FilesPanel(
+    st: EditorState, onOpenScript: (String) -> Unit, onOpenScene: (String) -> Unit, onOpenSettings: () -> Unit,
+    onImport: () -> Unit, modifier: Modifier = Modifier
+) {
     val rev = st.rev
-    val assets = Projects.assetsDir(st.dir).listFiles()?.filter { it.isFile }?.sortedBy { it.name } ?: emptyList()
+    val entries = tree(st.dir)
     Column(modifier) {
-        DockHeader("Arquivos") {
+        DockHeader("Arquivos  res://") {
             Text("＋ imagem", fontSize = 11.sp, color = Cyan, modifier = Modifier.clickable { onImport() }.padding(horizontal = 6.dp))
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            @Composable fun Item(label: String, onClick: (() -> Unit)?) {
-                Text(
-                    label, fontSize = 12.sp, maxLines = 1,
-                    modifier = Modifier.fillMaxWidth().clickable(enabled = onClick != null) { onClick?.invoke() }
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
-                )
-            }
-            Item("📁 res://", null)
-            Item("    📄 main.trix", onOpenScript)
-            Item("    ⚙ project.json", onOpenSettings)
-            Item("    🎬 scene.json", null)
-            Item("    📁 assets/", null)
-            assets.forEach { f ->
-                Item("        🖼 ${f.name}") {
-                    val o = st.sel
-                    if (o != null) { assignImage(o, f.name); st.edited() }
+            for (e in entries) {
+                val pad = "   ".repeat(e.depth)
+                val icon = when {
+                    e.isDir -> "📁"
+                    e.name.endsWith(".scene") -> "🎬"
+                    e.name.endsWith(".tr") -> "📜"
+                    e.name.endsWith(".json") -> "⚙"
+                    else -> "🖼"
                 }
-            }
-            if (assets.isNotEmpty()) {
+                val current = e.rel == st.scenePath
                 Text(
-                    "Toque numa imagem para aplicar ao objeto selecionado.",
-                    fontSize = 10.sp, color = Color(0xFF94A3B8), modifier = Modifier.padding(10.dp)
+                    "$pad$icon ${e.name}", fontSize = 12.sp, maxLines = 1,
+                    color = if (current) Cyan else Color.White,
+                    modifier = Modifier.fillMaxWidth().clickable(enabled = !e.isDir) {
+                        when {
+                            e.name.endsWith(".scene") -> onOpenScene(e.rel)
+                            e.name.endsWith(".tr") -> onOpenScript(e.rel)
+                            e.name == "project.json" -> onOpenSettings()
+                            e.rel.startsWith("assets/") -> { val o = st.sel; if (o != null) { assignImage(st, o, e.name); st.edited() } }
+                        }
+                    }.padding(horizontal = 10.dp, vertical = 5.dp)
                 )
             }
+            if (st.scenePath == null) {
+                Text("🎬 sem_titulo.scene  (não salva)", fontSize = 12.sp, color = Color(0xFFFACC15), modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
+            }
+            Text(
+                "Toque numa imagem em assets/ para aplicar ao objeto selecionado.",
+                fontSize = 10.sp, color = Color(0xFF94A3B8), modifier = Modifier.padding(10.dp)
+            )
         }
     }
 }
@@ -153,9 +180,9 @@ fun FilesPanel(st: EditorState, onOpenScript: () -> Unit, onOpenSettings: () -> 
 // ---------------------------------------------------------------- janela "Criar novo objeto"
 
 @Composable
-fun AddObjectDialog(onDismiss: () -> Unit, onPick: (NodeKind) -> Unit) {
+fun AddObjectDialog(mode: String, onDismiss: () -> Unit, onPick: (NodeKind) -> Unit) {
     var q by remember { mutableStateOf("") }
-    val list = NODE_KINDS.filter { q.isBlank() || it.title.contains(q, true) || it.desc.contains(q, true) }
+    val list = NODE_KINDS.filter { (it.mode == "both" || it.mode == mode) && (q.isBlank() || it.title.contains(q, true) || it.desc.contains(q, true)) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
             shape = RoundedCornerShape(14.dp), color = Surf,
@@ -226,6 +253,104 @@ fun ExportDialog(dir: File, onDismiss: () -> Unit) {
                             "O jogo exportado abre direto, sem o editor e sem pedir permissão de armazenamento.",
                     fontSize = 11.sp, color = Color(0xFF94A3B8)
                 )
+            }
+        }
+    }
+}
+
+
+// ---------------------------------------------------------------- salvar em uma pasta do projeto (res://)
+
+@Composable
+fun SaveAsDialog(dir: File, title: String, defaultName: String, ext: String, startFolder: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var folder by remember { mutableStateOf(startFolder) }
+    var name by remember { mutableStateOf(defaultName) }
+    var newFolder by remember { mutableStateOf("") }
+    val here = if (folder.isEmpty()) dir else File(dir, folder)
+    val subs = here.listFiles()?.filter { it.isDirectory && !it.name.startsWith(".") }?.sortedBy { it.name } ?: emptyList()
+    val clean = name.trim().filter { it.isLetterOrDigit() || it == '_' || it == '-' }
+    val rel = (if (folder.isEmpty()) "" else "$folder/") + clean + ext
+    val exists = clean.isNotEmpty() && File(dir, rel).exists()
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(shape = RoundedCornerShape(14.dp), color = Surf, modifier = Modifier.fillMaxWidth(0.72f).fillMaxHeight(0.92f)) {
+            Column(Modifier.padding(14.dp)) {
+                Text(title, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text("Pasta: res://" + folder, fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = Cyan, modifier = Modifier.padding(vertical = 4.dp))
+                LazyColumn(Modifier.weight(1f).background(Dark)) {
+                    if (folder.isNotEmpty()) item {
+                        Text("⬆  ..", modifier = Modifier.fillMaxWidth().clickable { folder = folder.substringBeforeLast('/', "") }.padding(10.dp))
+                    }
+                    items(subs) { f ->
+                        Text("📁  ${f.name}", modifier = Modifier.fillMaxWidth().clickable { folder = if (folder.isEmpty()) f.name else "$folder/${f.name}" }.padding(10.dp))
+                    }
+                    if (subs.isEmpty()) item { Text("(sem subpastas)", fontSize = 12.sp, color = Color(0xFF94A3B8), modifier = Modifier.padding(10.dp)) }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
+                    OutlinedTextField(value = newFolder, onValueChange = { newFolder = it }, label = { Text("Nova pasta") }, singleLine = true, modifier = Modifier.weight(1f))
+                    OutlinedButton(onClick = {
+                        val n = newFolder.trim().filter { it.isLetterOrDigit() || it == '_' || it == '-' }
+                        if (n.isNotEmpty()) { File(here, n).mkdirs(); folder = if (folder.isEmpty()) n else "$folder/$n"; newFolder = "" }
+                    }) { Text("Criar") }
+                }
+                OutlinedTextField(
+                    value = name, onValueChange = { name = it }, label = { Text("Nome do arquivo ($ext)") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                )
+                if (exists) Text("Já existe: será substituído.", fontSize = 11.sp, color = Color(0xFFFACC15))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Cancelar") }
+                    Button(onClick = { onSave(rel) }, enabled = clean.isNotEmpty()) { Text("Salvar") }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- alterações não salvas
+
+@Composable
+fun UnsavedDialog(st: EditorState, saveLabel: String, discardLabel: String, onSave: () -> Unit, onDiscard: () -> Unit, onCancel: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("Alterações não salvas") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Estes itens ainda não foram salvos:")
+                if (st.scenePath == null) Text("• Cena nova (sem_titulo.scene) — você escolhe a pasta", fontSize = 13.sp)
+                else if (st.dirty) Text("• Cena ${st.sceneName} / configurações do projeto", fontSize = 13.sp)
+                st.dirtyScripts.forEach { Text("• Script $it", fontSize = 13.sp) }
+            }
+        },
+        confirmButton = { TextButton(onClick = onSave) { Text(saveLabel) } },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onCancel) { Text("Cancelar") }
+                TextButton(onClick = onDiscard) { Text(discardLabel, color = Color(0xFFF87171)) }
+            }
+        }
+    )
+}
+
+// ---------------------------------------------------------------- escolher um arquivo do projeto
+
+@Composable
+fun PickFileDialog(title: String, files: List<String>, newLabel: String?, onNew: () -> Unit, onDismiss: () -> Unit, onPick: (String) -> Unit) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(shape = RoundedCornerShape(14.dp), color = Surf, modifier = Modifier.fillMaxWidth(0.6f).fillMaxHeight(0.85f)) {
+            Column(Modifier.padding(14.dp)) {
+                Text(title, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Spacer(Modifier.height(6.dp))
+                LazyColumn(Modifier.weight(1f)) {
+                    items(files) { f ->
+                        Text(f, fontFamily = FontFamily.Monospace, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().clickable { onPick(f) }.padding(vertical = 10.dp, horizontal = 6.dp))
+                        HorizontalDivider(color = Surf2)
+                    }
+                    if (files.isEmpty()) item { Text("Nenhum arquivo ainda.", color = Color(0xFF94A3B8), modifier = Modifier.padding(10.dp)) }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    if (newLabel != null) TextButton(onClick = onNew) { Text(newLabel) }
+                    TextButton(onClick = onDismiss) { Text("Cancelar") }
+                }
             }
         }
     }

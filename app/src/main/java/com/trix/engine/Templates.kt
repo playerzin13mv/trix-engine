@@ -2,8 +2,64 @@ package com.trix.engine
 
 import android.graphics.Color as AColor
 
+class Tpl(val objs: List<GameObject>, val scripts: Map<String, String>, val sceneScript: String, val settings: ProjectSettings) {
+    val objects get() = objs
+}
+
 object Templates {
     private fun c(hex: String) = AColor.parseColor(hex)
+
+    fun build(mode: String, template: Int): Tpl {
+        if (mode == "3d") return build3d(template)
+        val g = "scripts/main.tr"
+        return when (template) {
+            1 -> Tpl(coinsScene(), mapOf(g to COINS_SCRIPT), g, ProjectSettings())
+            2 -> Tpl(jumpScene(), mapOf(g to JUMP_SCRIPT), g, ProjectSettings(gravity = 1500.0))
+            3 -> Tpl(marioScene(), mapOf(g to MARIO_SCRIPT), g, ProjectSettings(gravity = 1700.0, gamepad = true, bg = AColor.parseColor("#5C94FC"), showGrid = false))
+            4 -> {
+                val objs = sonicScene()
+                objs.first { it.name == "sonic" }.script = "scripts/sonic.tr"
+                Tpl(objs, mapOf("scripts/sonic.tr" to SONIC_SCRIPT.replace("sonic", "self")), "", ProjectSettings(gravity = 787.5, gamepad = true, bg = AColor.parseColor("#2563EB"), showGrid = false))
+            }
+            5 -> Tpl(minecraftScene(), mapOf(g to MINECRAFT_SCRIPT), g, ProjectSettings(gravity = 1600.0, gamepad = true, bg = AColor.parseColor("#87CEEB"), showGrid = false))
+            else -> Tpl(blankScene(), mapOf(g to BLANK_SCRIPT), g, ProjectSettings())
+        }
+    }
+
+    // ------------------------------------------------------------ 3D
+    private fun mesh(name: String, shape: String, x: Double, y: Double, z: Double, w: Double, h: Double, d: Double, color: String) =
+        GameObject(name, "mesh").apply { this.shape = shape; this.x = x; this.y = y; this.z = z; this.w = w; this.h = h; this.d = d; this.color = c(color) }
+
+    private fun build3d(template: Int): Tpl {
+        val g = "scripts/main.tr"
+        val s3 = ProjectSettings(
+            mode = "3d", gravity = 22.0, gamepad = true, bg = AColor.parseColor("#7DD3FC"), showGrid = true,
+            camX = 0.0, camY = 6.0, camZ = -10.0, camYaw = 0.0, camPitch = -25.0, camFov = 60.0
+        )
+        if (template == 1) {
+            val objs = listOf(
+                mesh("chao", "plane", 0.0, 0.0, 0.0, 40.0, 1.0, 40.0, "#4ADE80").apply { body = "static" },
+                mesh("jogador", "box", 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, "#F59E0B").apply { body = "dynamic"; gravity = true },
+                mesh("bloco1", "box", 4.0, 0.75, 4.0, 3.0, 1.5, 3.0, "#94A3B8").apply { body = "static" },
+                mesh("bloco2", "box", -5.0, 1.5, 7.0, 3.0, 3.0, 3.0, "#64748B").apply { body = "static" },
+                mesh("piramide", "pyramid", 8.0, 1.5, -3.0, 3.0, 3.0, 3.0, "#F43F5E"),
+                mesh("coluna", "cylinder", -7.0, 2.0, -3.0, 1.5, 4.0, 1.5, "#A855F7"),
+                mesh("moeda1", "sphere", 4.0, 2.2, 4.0, 0.7, 0.7, 0.7, "#FACC15"),
+                mesh("moeda2", "sphere", -5.0, 3.7, 7.0, 0.7, 0.7, 0.7, "#FACC15"),
+                mesh("moeda3", "sphere", 8.0, 1.0, 2.0, 0.7, 0.7, 0.7, "#FACC15"),
+                mesh("moeda4", "sphere", -2.0, 1.0, 9.0, 0.7, 0.7, 0.7, "#FACC15"),
+                hud("Moedas: 0")
+            )
+            return Tpl(objs, mapOf(g to SCRIPT_3D), g, s3)
+        }
+        return Tpl(
+            listOf(
+                mesh("chao", "plane", 0.0, 0.0, 0.0, 20.0, 1.0, 20.0, "#4ADE80").apply { body = "static" },
+                mesh("cubo", "box", 0.0, 1.0, 0.0, 2.0, 2.0, 2.0, "#A855F7")
+            ),
+            mapOf(g to BLANK_3D), g, s3.copy(gamepad = false)
+        )
+    }
 
     private fun part(name: String, shape: String, x: Double, y: Double, w: Double, h: Double, color: String) =
         GameObject(name, "part").apply { this.shape = shape; this.x = x; this.y = y; this.w = w; this.h = h; this.color = c(color) }
@@ -376,6 +432,71 @@ func update(dt)
     end
 
     if sonic.y > 700
+        restart()
+    end
+end
+""".trimStart()
+
+    val BLANK_3D = """
+# Script 3D (TrixScript)
+# camera.x/y/z, camera.yaw, camera.pitch controlam a câmera
+# objetos 3D: x y z  w h d  rx ry rotation  vx vy vz
+
+func update(dt)
+    cubo.ry += 60 * dt
+end
+""".trimStart()
+
+    val SCRIPT_3D = """
+# 3D simples — setas movem o cubo, A pula
+# Setas: ◀ ▶ lado, ▲ ▼ frente/trás.   A: pular
+
+var score = 0
+var coins = [moeda1, moeda2, moeda3, moeda4]
+
+func start()
+    follow3d(jogador, 9, 5, 4)
+    hud.text = "Moedas: 0"
+end
+
+func update(dt)
+    var mx = 0
+    var mz = 0
+    if input.left
+        mx = -1
+    end
+    if input.right
+        mx = 1
+    end
+    if input.up
+        mz = 1
+    end
+    if input.down
+        mz = -1
+    end
+    jogador.vx = approach(jogador.vx, mx * 6, 45 * dt)
+    jogador.vz = approach(jogador.vz, mz * 6, 45 * dt)
+    if mx != 0 or mz != 0
+        jogador.ry = deg(atan2(mx, mz))
+    end
+
+    if input.a_pressed and jogador.grounded
+        jogador.vy = 9
+        tone(520, 60)
+    end
+
+    piramide.ry += 40 * dt
+    for c in coins
+        c.ry += 180 * dt
+        if c.visible and overlaps3d(jogador, c)
+            c.visible = false
+            score += 1
+            hud.text = "Moedas: " + score
+            tone(988, 70)
+        end
+    end
+
+    if jogador.y < -10
         restart()
     end
 end
